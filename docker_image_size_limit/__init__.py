@@ -19,12 +19,17 @@ def main() -> NoReturn:
     """Main CLI entrypoint."""
     client = docker.from_env()
     arguments = _parse_args()
-    extra_size, extra_layers = _check_image(
+    extra_size, extra_layers, image_current_size = _check_image(
         client,
         image=arguments.image,
         max_size=arguments.max_size,
         max_layers=arguments.max_layers,
     )
+    if arguments.current_size:
+        print('{0} current size is {1}'.format(  # noqa: WPS421
+            arguments.image,
+            format_size(image_current_size, binary=True),
+        ))
 
     exit_code = 0
     if extra_size > 0:
@@ -41,6 +46,8 @@ def main() -> NoReturn:
             extra_layers,
         ))
         exit_code = 1
+    if arguments.dry_run:
+        exit_code = 0
     sys.exit(exit_code)
 
 
@@ -49,14 +56,15 @@ def _check_image(
     image: str,
     max_size: str,
     max_layers: int,
-) -> Tuple[int, int]:
+) -> Tuple[int, int, int]:
     image_info = client.images.get(image)
+    image_current_size: int = image_info.attrs['Size']
     size_overflow = check_image_size(image_info, limit=max_size)
     if max_layers > 0:
         layers_overflow = check_image_layers(image_info, limit=max_layers)
     else:
         layers_overflow = 0
-    return size_overflow, layers_overflow
+    return size_overflow, layers_overflow, image_current_size
 
 
 def check_image_size(
@@ -125,5 +133,19 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         help='Maximum number of image layers',
         default=-1,
+    )
+    parser.add_argument(
+        '--current', '-c',
+        action='store_true',
+        help='Display the current size of the Docker image',
+        default=False,
+        dest='current_size'
+    )
+    parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='Exit with 0 even if docker image size/layers exceed max_size and max-layers',
+        default=False,
+        dest='dry_run'
     )
     return parser.parse_args()
